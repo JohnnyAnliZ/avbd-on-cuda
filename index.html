@@ -1,0 +1,113 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Cal+Sans&family=Unna:ital,wght@0,400;0,700;1,400;1,700&display=swap');
+
+
+
+body {
+	font-family: 'Unna', 'Times New Roman', Times, serif;
+	color:#000;
+	background:#eeeee8;
+	font-size:16px;
+	margin: 1em auto 50vh auto;
+	padding: 1em 2em 1em 2em;
+	max-width:45em;
+	border-radius:4px;
+	box-shadow:0 0 10px #0008;
+}
+
+h1 { font-size: 20px; font-weight: 700; }
+h2 { font-size: 16px; font-weight: 700; }
+h3 { font-size: 16px; font-weight: 400; }
+h4 { font-size: 14px; font-weight: 400; }
+
+h1, h2, h3, h4 {
+    font-family: "Cal Sans", sans-serif;
+	margin: 15px 0 0 -10px;
+    letter-spacing: 0.03em;
+}
+
+p {
+	margin: 5px 0 0 0;
+    line-height: 1.5;
+    letter-spacing: 0.01em;
+}
+
+a {
+  color: #753621;;
+}
+
+a:hover,
+a:focus-visible {
+  color: #a1ba23
+}
+
+
+</style>
+<title>Rigid Body with AVBD</title>
+</head>
+<body>
+<main>
+
+<h1>Augmented Vertex Block Descent using CUDA</h1>
+<p>Johnny Zhang</p>
+<p>Webpage: <a href = "https://johnnyanliz.github.io/avbd-on-gpu" >https://johnnyanliz.github.io/avbd-on-gpu</a></p>
+<h2>Summary</h2>
+<p>I will implement an Augmented Vertex Block Descent (<a href="https://graphics.cs.utah.edu/research/projects/avbd/Augmented_VBD-SIGGRAPH25.pdf">AVBD</a>) solver on the GPU for simulating rigid bodies, then I will attempt further optimizations based on experiments.</p>
+
+<h2>Background</h2>
+<p>I will implement a 3D rigid-body simulation in CUDA using Augmented Vertex Block Descent (AVBD). The simulation will model boxes that fall, collide, and stack under gravity. At each timestep, collision detection identifies potential colliding pairs and computes contact points and normals for those pairs. The paper uses DirectX 11 compute shaders. CUDA interoperates with Vulkan, so I can test AVBD on its own and in a real-time graphics application.</p>
+
+<p>Parallelization is crucial and complicated in solving such simulation problems in real-time applications due to the sheer number of bodies and the potential interactions between those bodies. AVBD’s approach scales well and has good accuracy with its local primal-dual approach.</p>
+
+<p>I will follow the paper’s graph-colored schedule. Bodies connected by a contact are assigned different colors. Bodies of the same color can update in parallel because each writes its own pose while its neighbors’ poses stay fixed during that pass. The colors run in sequence so later passes can read earlier updates. After all colors finish, contacts can update their force estimates and stiffnesses in parallel because each contact reads body poses and writes its own state.</p>
+
+<h2>Challenge</h2>
+<p>As mentioned in the paper, dependencies exist between colors assigned to the bodies. Each color gets updated in a global pass before the next color starts. If a warp updates 32 bodies of the same color and their contact counts differ substantially, the contact loop runs as long as the busiest lane needs. I want to investigate how the choices I make in coloring the graph can lead to better work distribution.</p>
+
+<p>Another potential approach is to separate the problem into <a href="https://box2d.org/posts/2023/10/simulation-islands/">islands</a>, or groups of connected bodies. A CUDA block can go through the colors in one island independently of the blocks processing other islands. Packing each island’s data into shared memory could also improve locality and reduce memory traffic.</p>
+
+<p>Another area that has potential for improvement is collision detection. As mentioned in the paper, collision detection can take longer than the solver for scenes with many bodies.</p>
+
+<h2>Resources</h2>
+
+<h3>Computing</h3>
+<p>I might use the NVIDIA GPUs on the GHC computers, though I also have an NVIDIA RTX 3060.</p>
+
+<h3>Code</h3>
+<p>I will reuse scene loading and rendering code from my <a href="https://github.com/JohnnyAnliZ/Vulkan-Render-RTG-15472">real-time graphics course project</a>.</p>
+
+<h3>References</h3>
+<p>The main reference is <a href="https://graphics.cs.utah.edu/research/projects/avbd/Augmented_VBD-SIGGRAPH25.pdf"><em>Augmented Vertex Block Descent</em></a> by Giles, Diaz, and Yuksel.</p>
+<p>I also take inspiration from Erin Catto’s <a href="https://box2d.org/posts/2023/10/simulation-islands/">simulation islands article</a> on the Box2D website.</p>
+
+<h2>Goals and Deliverables</h2>
+
+<h3>Plan to achieve</h3>
+<p>I will implement a working CUDA AVBD solver for 3D boxes that fall, collide, and stack. I will use the paper’s graph-colored schedule as the GPU baseline and validate it on small scenes, such as a box dropping onto a floor and a stack settling under gravity.</p>
+
+<p>I will compare the baseline with a schedule that groups bodies within each color by their number of contacts. This keeps the coloring fixed and tests whether assigning bodies with similar workloads to the same warp reduces idle lanes.</p>
+
+<p>I will benchmark separate stacks, dense piles, and collapsing towers. I will measure collision detection, coloring and scheduling, and solver time separately. I will compare runtime at a fixed iteration count and check how quickly each schedule reduces penetration.</p>
+
+<h3>Hope to achieve</h3>
+<p>I will try finding simulation islands and assigning them to CUDA blocks. I will test whether the reduction in kernel launches and global-memory traffic offsets the cost of finding and packing islands.</p>
+
+<p>My stretch performance goal is to simulate 100,000 rigid bodies at 60 fps on my NVIDIA RTX 3060.</p>
+
+<h2>Timeline</h2>
+<p><strong>11/10–11/17</strong> — Read the paper more thoroughly to understand the implementation details. Implement collision detection and graph coloring.</p>
+<p><strong>11/18–11/24</strong> — Implement the solver for pose and contact updates. Test uneven contact workloads with artificial scenes. Render the scene using my existing Vulkan renderer.</p>
+<p><strong>11/25–12/2</strong> — Implement contact-count grouping within each color and test whether it reduces idle lanes.</p>
+<p><strong>12/3–12/10</strong> — Run scaling experiments, analyze the measurements, and prepare for the presentation.</p>
+
+</main>
+</body>
+</html>
+
+</main>
+</body>
+</html>
