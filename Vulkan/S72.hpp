@@ -1,0 +1,285 @@
+#pragma once
+#include "sejp.hpp"
+
+#include <vulkan/vk_enum_string_helper.h>
+#include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan.h>
+
+#include "mat4.hpp"
+
+#include "image_helpers.hpp"
+
+#include <filesystem>
+#include <limits>
+#include <fstream>
+#include <iostream>
+#include <optional>
+#include <string>
+#include <unordered_map>
+#include <variant>
+#include <vector>
+
+/*
+ * Represents a scene in s72 format.
+ * Specification: https://github.com/15-472/s72
+ *
+ * - Resolves name-based references to pointers.
+ * - Resolves file paths relative to scene file.
+ * - DOES NOT attempt to load texture or data files.
+ * - Stores objects in name-based dictionaries.
+ * - Otherwise, represents scene just as in the spec.
+ *
+ * Usage:
+ *  try {
+ *    S72 scene = S72::load("path/to/my_s72_scene.s72");
+ *    //scene loading succeeded!
+ *  } catch (std::exception &e) {
+ *    std::cerr << "Scene loading failed:\n" << e.what() << std::endl;
+ *  }
+ *
+ */
+
+struct S72 {
+	//NOTE: redefine these for your vector and quaternion types of choice:
+	using color = vec3;
+	vec3 linear_to_srgb(vec3 linear);
+	inline static float sRGB(float x){
+    if (x <= 0.00031308f)
+        return 12.92f * x;
+    else
+        return 1.055f*std::pow(x,(1.0f / 2.4f) ) - 0.055f;
+	};
+	//-------------------------------------------------
+
+	static S72 load(std::string const &file); //NOTE: throws on error
+
+	S72() = default; //empty scene
+
+	//no copy constructor because it would require pointe fixups:
+	S72(S72 const &) = delete;
+	S72 &operator=(S72 const &) = delete;
+
+	//move constructor okay:
+	S72(S72 &&) = default;
+	S72 &operator=(S72 &&) = default;
+
+	//forward declarations so we can write the scene's objects in the same order as in the spec:
+	struct Node;
+	struct Mesh;
+	struct DataFile;
+	struct Camera;
+	struct Driver;
+	struct Texture;
+	struct Material;
+	struct Environment;
+	struct Light;
+
+	//-------------------------------------------------
+	//s72 Scenes contain:
+
+	//exactly one scene:
+	struct Scene {
+		std::string name;
+		std::vector< Node * > roots;
+	};
+	Scene scene;
+
+	//zero or more "NODE"s, all with unique names:
+	struct Node {
+		std::string name;
+
+		vec3 translation = vec3{ 0.0f, 0.0f, 0.0f };
+		quat rotation = quat{ 0.0f, 0.0f, 0.0f, 1.0f };
+		vec3 scale = vec3{ 1.0f, 1.0f, 1.0f };
+
+		std::vector< Node * > children;
+
+		//optional, null if not specified:
+		Mesh *mesh = nullptr;
+		Camera *camera = nullptr;
+		Environment *environment = nullptr;
+		Light *light = nullptr;
+
+		mat4 parent_from_local() {
+			return mat4::translate(translation)
+				* mat4::rotate(rotation)
+				* mat4::scale(scale);
+		}
+		
+	};
+	std::unordered_map< std::string, Node > nodes;
+
+	//zero or more "MESH"s, all with unique names:
+	struct Mesh {
+		std::string name;
+
+		VkPrimitiveTopology topology;
+		uint32_t count;
+		struct Indices {
+			DataFile &src;
+			uint32_t offset;
+			VkIndexType format;
+		};
+		std::optional< Indices > indices; //mesh index stream; optional
+ 
+		struct Attribute {
+			DataFile &src; uint32_t offset; uint32_t stride; VkFormat format;
+		};
+		std::unordered_map< std::string, Attribute > attributes;
+
+		Material *material = nullptr; //optional, null if not specified
+	};
+	std::unordered_map< std::string, Mesh > meshes;
+
+	//data files referenced by meshes:
+	struct DataFile {
+		std::string src;   // src used in the s72 file
+		std::string path;  // resolved path
+
+		uint32_t size = 0;
+		std::vector<char> data;
+	};
+	//we organize the data files by "src" so that multiple attributes with the same src resolve to the same DataFile:
+	std::unordered_map< std::string, DataFile > data_files;
+
+	//zero or more "CAMERA"s, all with unique names:
+	struct Camera {
+		std::string name;
+
+		struct Perspective {
+			float aspect;
+			float vfov;
+			float near;
+			float far = std::numeric_limits< float >::infinity(); //optional, if not specified will be set to infinity
+		};
+
+		//(s72 leaves open the possibility of other camera projections, but does not define any)
+
+		std::variant< Perspective > projection;
+	};
+	std::unordered_map< std::string, Camera > cameras;
+
+	//zero or more "DRIVER"s, all with unique names:
+	struct Driver {
+		std::string name;
+
+		Node &node;
+
+		enum class Channel {
+			translation,
+			scale,
+			rotation
+		} channel;
+
+		std::vector< float > times;
+		std::vector< float > values;
+
+		enum class Interpolation {
+			STEP,
+			LINEAR,
+			SLERP,
+		} interpolation = Interpolation::LINEAR;
+	};
+	//NOTE: drivers are stored in a vector in the order they appear in the file.
+	//      This is because drivers are applied in file order:
+	std::vector< Driver > drivers;
+
+	//zero or more "MATERIAL"s, all with unique names:
+	struct Material {
+		std::string name;
+
+		Texture *normal_map = nullptr; //optional, set to null if not specified
+		Texture *displacement_map = nullptr; //optional, set to null if not specified
+
+		//Materials are one of these types:
+		// NOTE: if any of these parameters are the Texture * branch of their variant, they are not null
+		struct PBR {
+			std::variant< color, Texture * > albedo = color{1.0f, 1.0f, 1.0f};
+			std::variant< float, Texture * > roughness = 1.0f;
+			std::variant< float, Texture * > metalness = 0.0f;
+		};
+		struct Lambertian {
+			std::variant< color, Texture * > albedo = color{1.0f, 1.0f, 1.0f};
+		};
+		struct Mirror { 
+			std::string env_name;//name of the environment to sample from
+		};
+		struct Environment { 
+			std::string name;//name of the environment to sample from
+		};
+
+		std::variant< PBR, Lambertian, Mirror, Environment > brdf;
+	};
+	std::unordered_map< std::string, Material > materials;
+
+	//textures referenced by materials:
+	struct Texture {
+		std::string src; //src used in the s72 file
+		enum class Type {
+			flat, //"2D" in the spec, but identifier can't start with a number
+			cube,
+		} type = Type::flat;
+		enum class Format {
+			linear,
+			srgb,
+			rgbe,
+		} format = Format::linear;
+
+		//computed during loading:
+		std::string path; //path to data file, taking into account path to s72 file (relative to current working directory)
+
+
+		uint32_t width = 0;
+		uint32_t height = 0;
+
+		std::vector<char> data;
+		//careful indexing into it, mip level one is index 0
+		std::vector<std::vector<char>> mip_data;
+
+	};
+	//we organize textures by src + type + format, so that two materials using to the same image *in the same way* end up referring to the same texture object:
+	std::unordered_map< std::string, Texture > textures;
+
+	//zero or more Environments, all with unique names:
+	struct Environment {
+		std::string name;
+
+		Texture *radiance; //NOTE: always of type "cube"; will always be non-null once scene has been loaded
+	};
+	std::unordered_map< std::string, Environment > environments;
+
+	//zero or more "LIGHT"s, all with unique names:
+	struct Light {
+		std::string name;
+
+		color tint = color{1.0f,1.0f,1.0f };
+	
+		uint32_t shadow = 0; //optional, if not set will be '0'
+
+		//light has exactly one of these sources:
+		struct Sun {
+			float angle;
+			float strength;
+			static const uint32_t shadow_map_num = 1;
+		};
+		struct Sphere {
+			float radius;
+			float power;
+			float limit = std::numeric_limits< float >::infinity(); //optional, will be infinity if not specified
+			static const uint32_t shadow_map_num = 6;
+		};
+		struct Spot {
+			float radius;
+			float power;
+			float limit = std::numeric_limits< float >::infinity(); //optional, will be infinity if not specified
+			float fov;
+			float blend;
+			static const uint32_t shadow_map_num = 1;
+		};
+		std::variant< Sun, Sphere, Spot > source;
+	};
+	std::unordered_map< std::string, Light > lights;
+};
+
+
+

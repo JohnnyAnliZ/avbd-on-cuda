@@ -1,0 +1,128 @@
+
+-----A1-----
+Done: 
+
+mesh loading
+
+load nodes(scene is not static)
+    ObjectInstances are in world space, load the nodes(trimming ones that don't have anything) and compute the world transform of object ObjectInstances
+
+    Get all instances by traversing the graph using a queue and bfs
+
+    every frame, get all the root nodes and compute all the world transforms for the ObjectInstances objects
+
+TODO:
+
+//show debug lines and frustrum, add another debug camera
+    command line camera choosing
+
+//move
+    done
+
+
+//cull
+    done
+
+//gpu-bottleneck with overlapping planes
+    done
+
+
+----A2----
+
+//env 
+    need to load the cubemap png into the c++ code, convert rgbe in the png to VK_FORMAT_R32G32B32A32_SFLOAT
+
+    need to update the create_image() and transfer_to_image() functions to take cubemap images
+
+    update the create image view
+
+    refactor the tutorial code 
+
+    now that I've layed the groundwork for a material to textures lookup unordered_map, I should make different pipelines and bind them 
+    accordingly based on the material type
+
+    in the update loop, put objects of different materials into differnt bins, also update the EYE to pass into the shader for light calculations
+
+    in the render loop, bind the pipeline for different bins and upload the resources each pipeline need
+
+    Done
+
+//diffuse 
+    create the cubemap utility to, i guess, preconvolve the environment onto a sphere by sampling from the cubemap for every sphere cubemap 
+    texel
+
+
+//pbr
+    create the integrate brdf lookuptable and store it as R16B16
+
+    create prefiltered env maps of 5 roughnesses
+        TODO::
+            Fix face issue : done
+            use pdf hack
+
+    implement the pbr shader taking in normal map, roughness map, albedo
+
+----A3----
+//lights
+    
+    add lights to shaders
+    pbr: diffuse and specular
+
+    lambertian: same as pbr diffuse
+
+    TODO: debug the lights for the falloff problem, looks too black and white
+
+//shadow mapping
+
+    get the view projection matrix to transform local object coordinates into lights' clip space
+
+    for spotlight, it's just a regular view projection matrix
+
+    for sun, we need to do cascade shadow maps(later)
+
+    for sphere lights, maybe just do spotlight 6 times
+
+
+    TODO: get spotlight working
+
+    step 1, allocate the shadow atlas
+    - in the scene graph pass, load the lights and their sizes into a vector of texture_sizes aligned with the lights vector
+    - get a vector of indices (sorted_light_indices) into the light vector in desceneding size
+    - build the atlas using https://lisyarus.github.io/blog/posts/texture-packing.html 2^n squares packing algo, if an index leads us to a 
+    spot light with cube shadow map, just skip it. While building the atlus, we assign the shadow_atlus field for each light 
+
+    -just upload more data for cubemap sampling in the shader, don't do the smart thing
+
+
+    step 2, make the shadow passes
+    
+4/1/2026
+Problem: I want to really figure out how to separate the scene and the camera updating
+    Bottom line: transforms uploaded to the shader needs to be updated everytime the cameras or the scene updates
+Solution: maybe always update camera and always compute CLIP_FROM_LOCAL for every instance at the end of update 
+
+Problem: Somehow shadow map dumping doesn't work no more    
+Solution: no solution, turns out it's just that the shadow map is too big, takes too long 
+
+
+4/6/2026
+I've started researching fluid simulation with grids. I've narrowed down the implementation decisions:
+For parallelism on gpu, I should use a red-black gauss-seidel method for diffusion.
+
+4/7/2026
+First thing first, I should make a 3D texture, and first do just the add sources pass once 
+
+
+4/10
+Get some debug slices on the screen, make simple shader for add sources.
+
+Need to write shaders for TextureDebugPipeline and AddVectorSourcesPipeline!
+
+I need to understand the threads mapping thing with compute shaders
+
+4/13 
+Got the vulkan side of things working(for now), need to write some shader code for diffuse and advection step of the velocity
+
+Edit the code to account for boudary conditions
+
+Now need to do project and advection
