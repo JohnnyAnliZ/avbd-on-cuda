@@ -118,7 +118,7 @@ void MaterialSystem::make_descriptor_set(std::string mat_name, MaterialType mat_
 
 
 void MaterialSystem::load_materials(){
-    	{ //create the texture descriptor pool
+    { //create the texture descriptor pool
 		uint32_t per_workspace = uint32_t(rtg.workspaces.size());
 
 		uint32_t num_lambertian = 0;
@@ -192,7 +192,7 @@ void MaterialSystem::load_materials(){
 		//resolve the brdf
 		std::variant<S72::Material::PBR, S72::Material::Lambertian, S72::Material::Mirror, S72::Material::Environment> const &v = mat.second.brdf;
 		if(std::holds_alternative<S72::Material::PBR>(v)){
-			//for each texture to bind, either located using the texture-name-to-index table, or generate one
+			//for each texture to bind, either locate using the texture-name-to-index table, or generate one
 			//then make descriptor_set mapping the name of the material (mat.first) to the index into the vector of descriptor sets
 			S72::Material::PBR pbr = std::get<S72::Material::PBR>(v);
 			//collect the texture indices, gotta collect them all ~

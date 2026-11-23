@@ -34,7 +34,7 @@ const shared_objs = [
 ];
 
 const main_objs = [
-	maek.CPP('Tutorial.cpp'),
+	maek.CPP('AVBD.cpp'),
 	maek.CPP('PosColVertex.cpp'),
 	maek.CPP('GeometryGen.cpp'),
 	maek.CPP('PosNorTexVertex.cpp'),
@@ -44,7 +44,7 @@ const main_objs = [
 	maek.CPP('Helpers.cpp'),
 	maek.CPP('S72.cpp'),
 	maek.CPP('main.cpp'),
-	maek.CPP('Tutorial_Init.cpp'),
+	maek.CPP('AVBD_Init.cpp'),
 	maek.CPP('TextureSystem.cpp'),
 	maek.CPP('MaterialSystem.cpp'),
 	maek.CPP('SceneSystem.cpp'),
@@ -58,6 +58,11 @@ const cube_objs = [
 	maek.CPP('cube_utillities.cpp'),
 ];
 
+//maek.CUDA(...) builds a cuda source file:
+const cuda_objs = [
+	
+];
+
 //maek.GLSLC(...) builds a glsl source file:
 // it returns the path to the output .inl file
 
@@ -68,7 +73,7 @@ const overlay_shaders = [
 	maek.GLSLC('textureDebug.frag'),
 	maek.GLSLC('rayMarchSmoke.frag')
 ];
-main_objs.push( maek.CPP('Tutorial-BackgroundPipeline.cpp', undefined, { depends:[...overlay_shaders] } ) );
+main_objs.push( maek.CPP('BackgroundPipeline.cpp', undefined, { depends:[...overlay_shaders] } ) );
 main_objs.push( maek.CPP('TextureDebugPipeline.cpp', undefined, { depends:[...overlay_shaders] } ) );
 main_objs.push( maek.CPP('RayMarchSmokeVolume.cpp', undefined, { depends:[...overlay_shaders] } ) );
 
@@ -78,7 +83,7 @@ const lines_shaders = [
 	maek.GLSLC('lines.vert'),
 	maek.GLSLC('lines.frag'),
 ];
-main_objs.push( maek.CPP('Tutorial-LinesPipeline.cpp', undefined, { depends:[...lines_shaders] } ) );
+main_objs.push( maek.CPP('LinesPipeline.cpp', undefined, { depends:[...lines_shaders] } ) );
 
 //build objects shaders and pipeline:
 const objects_shaders = [
@@ -92,6 +97,12 @@ const shadows2D_shaders = [
 	maek.GLSLC('shadows2D.vert'),
 	maek.GLSLC('shadows2D.frag'),
 ];
+
+
+main_objs.push( maek.CPP('LambertianObjectsPipeline.cpp', undefined, { depends:[...objects_shaders] } ) );
+main_objs.push( maek.CPP('EnvMirrorObjectsPipeline.cpp', undefined, { depends:[...objects_shaders] } ) );
+main_objs.push( maek.CPP('PbrObjectsPipeline.cpp', undefined, { depends:[...objects_shaders] } ) );
+main_objs.push( maek.CPP('Shadow2DPipeline.cpp', undefined, { depends:[...objects_shaders, ...shadows2D_shaders] } ) );
 
 //compute shaders
 const compute_shaders = [
@@ -112,14 +123,6 @@ main_objs.push( maek.CPP('DiffuseVectorPipeline.cpp', undefined, { depends:[...c
 main_objs.push( maek.CPP('AdvectVectorPipeline.cpp', undefined, { depends:[...compute_shaders] } ) );
 main_objs.push( maek.CPP('ProjectionPipelines.cpp', undefined, { depends:[...compute_shaders] } ) );
 
-
-
-
-main_objs.push( maek.CPP('LambertianObjectsPipeline.cpp', undefined, { depends:[...objects_shaders] } ) );
-main_objs.push( maek.CPP('EnvMirrorObjectsPipeline.cpp', undefined, { depends:[...objects_shaders] } ) );
-main_objs.push( maek.CPP('PbrObjectsPipeline.cpp', undefined, { depends:[...objects_shaders] } ) );
-main_objs.push( maek.CPP('Shadow2DPipeline.cpp', undefined, { depends:[...objects_shaders, ...shadows2D_shaders] } ) );
-
 //particle system shaders and pipeline:
 const particle_shaders = [
 	maek.GLSLC('particles.comp'),
@@ -127,7 +130,6 @@ const particle_shaders = [
 	maek.GLSLC('particles.frag'),
 ];
 main_objs.push( maek.CPP('ParticleSystem.cpp', undefined, { depends:[...particle_shaders] } ) );
-
 
 
 const main_exe = maek.LINK([...main_objs, ...shared_objs], 'bin/main');
@@ -142,9 +144,15 @@ maek.TARGETS = [main_exe, cube_exe];
 function custom_flags_and_rules() {
 
 	let VULKAN_SDK; //this will also be set to point to the location of the Vulkan SDK (needed for running glslc)
+	let CUDA;
+
 
 	if (maek.OS === 'linux') {
 		VULKAN_SDK = process.env.VULKAN_SDK || `${process.env.HOME}/VulkanSDK/1.4.335.0/x86_64`;
+
+		CUDA = process.env.CUDA_PATH || `${process.env.HOME}/NVIDIA GPU Computing Toolkit/CUDA/v13.5`
+		console.log(`Using CUDA='${CUDA}'; set CUDA_PATH environment variable to override.`);
+		
 		console.log(`Using VULKAN_SDK='${VULKAN_SDK}'; set VULKAN_SDK environment variable to override.`);
 		const GLFW_DIR = process.env.GLFW_DIR || `../glfw-3.4/out`;
 		console.log(`Using GLFW_DIR='${GLFW_DIR}'; set GLFW_DIR environment variable to override.`);
@@ -171,6 +179,9 @@ function custom_flags_and_rules() {
 		VULKAN_SDK = process.env.VULKAN_SDK || `${process.env.USERPROFILE}/VulkanSDK/1.4.335.0`;
 		console.log(`Using VULKAN_SDK='${VULKAN_SDK}'; set VULKAN_SDK environment variable to override.`);
 
+		CUDA = process.env.CUDA_PATH || `${process.env.ProgramFiles}/NVIDIA GPU Computing Toolkit/CUDA/v13.5`
+		console.log(`Using CUDA='${CUDA}'; set CUDA_PATH environment variable to override.`);
+		
 		maek.options.CPP = ['cl.exe', '/nologo', '/EHsc', '/Z7', '/std:c++20', '/W4', '/WX', '/MD'];
 		maek.options.LINK = ['link.exe', '/nologo', '/SUBSYSTEM:CONSOLE', '/DEBUG:FASTLINK', '/INCREMENTAL:NO'];
 
@@ -199,6 +210,9 @@ function custom_flags_and_rules() {
 		VULKAN_SDK = process.env.VULKAN_SDK || `${process.env.HOME}/VulkanSDK/1.4.335.1/macOS`;
 		console.log(`Using VULKAN_SDK='${VULKAN_SDK}'; set VULKAN_SDK environment variable to override.`);
 
+		CUDA = process.env.CUDA_PATH || `${process.env.HOME}/NVIDIA GPU Computing Toolkit/CUDA/v13.5`
+		console.log(`Using CUDA='${CUDA}'; set CUDA_PATH environment variable to override.`);
+
 		maek.options.CPP = ['clang++', '-std=c++20', '-Wall', '-Werror', '-g'];
 		maek.options.LINK = ['clang++', '-std=c++20', '-Wall', '-Werror', '-g'];
 
@@ -224,12 +238,59 @@ function custom_flags_and_rules() {
 		console.error(`Unsupported OS: ${maek.OS}.`);
 		process.exit(1);
 	}
+	//- - - - - - - - - - - - -
+	//custom rule that runs CUDA
+	maek.DEFAULT_OPTIONS.CUDA = [`${CUDA}/bin/nvcc` + (maek.OS === 'windows' ? '.exe' : ''), '-g', '-O3', '-arch=sm_86']
+	maek.DEFAULT_OPTIONS.CUDAFlags = []
+	
+	maek.CUDA = (cudaFile, objFileBase, localOptions = {}) => {
+		const path = require('path').posix; //NOTE: expect posix-style paths even on windows
+		const fsPromises = require('fs').promises;
 
+		//combine options:
+		const options = maek.combineOptions(localOptions);
+
+		//if objFileBase isn't given, compute by trimming extension from cppFile and appending to objPrefix:
+		if (typeof objFileBase === 'undefined') {
+			objFileBase = path.relative('', options.objPrefix + cudaFile.replace(/\.[^.]*$/, ''));
+		}
+
+		//object file gets os-dependent suffix:
+		const objFile = objFileBase + options.objSuffix;
+
+		const cuda = [...options.CUDA, ...options.CUDAFlags];
+		const command = [...cuda, '-c', '-o', objFile, cudaFile];
+
+		//The actual build task:
+		const task = async () => {
+			//make object file:
+			await fsPromises.mkdir(path.dirname(objFile), { recursive: true });
+			await maek.run(command, `${task.label}: compile`,
+				async () => {
+					return {
+						read:[...task.depends],
+						written:[objFile]
+					};
+				}
+			);
+		};
+
+		task.depends = [cudaFile, ...options.depends];
+
+		task.label = `CUDA ${objFile}`;
+
+		if (objFile in maek.tasks) {
+			throw new Error(`Task ${task.label} purports to create ${objFile}, but ${maek.tasks[objFile].label} already creates that file.`);
+		}
+		maek.tasks[objFile] = task;
+		
+		return objFile;
+	};
 
 	//- - - - - - - - - - - - -
 	//custom rule that runs glslc:
 	
-	maek.DEFAULT_OPTIONS.GLSLC = [`${VULKAN_SDK}/bin/glslc` + (maek.OS === 'windows' ? '.exe' : ''), '-Werror', '-g', '-mfmt=c', '--target-env=vulkan1.2'];
+	maek.DEFAULT_OPTIONS.GLSLC = [`${VULKAN_SDK}/bin/glslc` + (maek.OS === 'windows' ? '.exe' : ''), 	'-Werror', '-g', '-mfmt=c', '--target-env=vulkan1.2'];
 	maek.DEFAULT_OPTIONS.GLSLCFlags = ['-I.'];
 	maek.DEFAULT_OPTIONS.spirvSuffix = '.inl';
 	maek.DEFAULT_OPTIONS.spirvPrefix = 'spv/';

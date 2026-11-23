@@ -1,4 +1,4 @@
-#include "Tutorial.hpp"
+#include "AVBD.hpp"
 
 #include "VK.hpp"
 
@@ -17,7 +17,7 @@
 
 
 
-Tutorial::Tutorial(RTG &rtg_)
+AVBD::AVBD(RTG &rtg_)
 	: rtg(rtg_),
 	  material_system(rtg_, scene72,
 	                  lambertian_objects_pipeline,
@@ -26,9 +26,8 @@ Tutorial::Tutorial(RTG &rtg_)
 	  scene_system(rtg_, scene72, material_system)
 {
 	// command pool, descriptor pool,
-	init_tutorial();
-
-
+	init_application();
+	
 	std::cout << "LOADING SCENE" << std::endl;
 
 	// set up loaded cameras, put mesh data into the GPU vertex buffer
@@ -38,24 +37,6 @@ Tutorial::Tutorial(RTG &rtg_)
 	material_system.load_textures();
 	material_system.load_materials();
 
-	
-	//initializing Compute System
-	std::cout<<"INITIALIZING Compute"<<std::endl;
-	compute_system.init_compute(rtg);
-
-	std::cout<<"INITIALIZING fluid"<<std::endl;
-	ComputeContext comp_context = compute_system.begin_frame(rtg);
-	fluid_system.init_fluid(rtg, comp_context, material_system, scene_system);
-	compute_system.end_frame(comp_context);
-
-	{
-		ComputeContext part_ctx = compute_system.begin_frame(rtg);
-		particle_system.init(rtg, part_ctx, particle_descriptor_pool,
-		                     fluid_system.velocity_3D_views);
-		compute_system.end_frame(part_ctx);
-	}
-
-	texture_debug_system.init_texture_debug(rtg, material_system, fluid_system);
 
 	std::cout<<"INITIALIZING shadows"<<std::endl;
 
@@ -65,13 +46,13 @@ Tutorial::Tutorial(RTG &rtg_)
 	std::cout << "finished loading stuff" << std::endl;
 }
 
-Tutorial::~Tutorial()
+AVBD::~AVBD()
 {
 	// just in case rendering is still in flight, don't destroy resources:
 	//(not using VK macro to avoid throw-ing in destructor)
 	if (VkResult result = vkDeviceWaitIdle(rtg.device); result != VK_SUCCESS)
 	{
-		std::cerr << "Failed to vkDeviceWaitIdle in Tutorial::~Tutorial [" << string_VkResult(result) << "]; continuing anyway." << std::endl;
+		std::cerr << "Failed to vkDeviceWaitIdle in AVBD::~AVBD [" << string_VkResult(result) << "]; continuing anyway." << std::endl;
 	}
 
 	// texture/material cleanup is handled by material_system destructor
@@ -82,14 +63,6 @@ Tutorial::~Tutorial()
 	{
 		destroy_framebuffers();
 	}
-
-	particle_system.destroy(rtg);
-	if (particle_descriptor_pool != VK_NULL_HANDLE) {
-		vkDestroyDescriptorPool(rtg.device, particle_descriptor_pool, nullptr);
-		particle_descriptor_pool = VK_NULL_HANDLE;
-	}
-	compute_system.destroy(rtg);
-	fluid_system.destroy(rtg);
 
 	for (Workspace &workspace : workspaces)
 	{
@@ -170,9 +143,6 @@ Tutorial::~Tutorial()
 	env_mirror_objects_pipeline.destroy(rtg);
 	pbr_objects_pipeline.destroy(rtg);
 	shadow_2D_pipeline.destroy(rtg);
-	texture_debug_system.texture_debug_pipeline.destroy(rtg);
-	ray_march_smoke_volume_pipeline.destroy(rtg);
-
 
 	if (command_pool != VK_NULL_HANDLE)
 	{
@@ -193,7 +163,7 @@ Tutorial::~Tutorial()
 	}
 }
 
-void Tutorial::on_swapchain(RTG &rtg_, RTG::SwapchainEvent const &swapchain)
+void AVBD::on_swapchain(RTG &rtg_, RTG::SwapchainEvent const &swapchain)
 {
 	//[re]create framebuffers:
 	// clean up existing framebuffers
@@ -247,7 +217,7 @@ void Tutorial::on_swapchain(RTG &rtg_, RTG::SwapchainEvent const &swapchain)
 	}
 }
 
-void Tutorial::destroy_framebuffers()
+void AVBD::destroy_framebuffers()
 {
 	for (VkFramebuffer &framebuffer : swapchain_framebuffers)
 	{
@@ -264,7 +234,7 @@ void Tutorial::destroy_framebuffers()
 	rtg.helpers.destroy_image(std::move(swapchain_depth_image));
 }
 
-void Tutorial::render(RTG &rtg_, RTG::RenderParams const &render_params)
+void AVBD::render(RTG &rtg_, RTG::RenderParams const &render_params)
 {
 	// assert that parameters are valid:
 	assert(&rtg == &rtg_);
@@ -577,93 +547,7 @@ void Tutorial::render(RTG &rtg_, RTG::RenderParams const &render_params)
 
 	
 	
-	if(scene_system.shadow_dump){ // transfer shadow_atlas to debug buffer
-		VkImageMemoryBarrier barrier{
-			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-			.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT, // or DEPTH_WRITE if just rendered
-			.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-			.oldLayout = scene_system.shadows_on ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-			.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-			.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-			.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-			.image = workspace.Shadow_Atlas.handle,
-			.subresourceRange = {
-				VK_IMAGE_ASPECT_DEPTH_BIT,
-				0, 1,
-				0, 1}};
-
-		vkCmdPipelineBarrier(
-			workspace.command_buffer,
-			VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-			VK_PIPELINE_STAGE_TRANSFER_BIT,
-			0,
-			0, nullptr,
-			0, nullptr,
-			1, &barrier);
-
-		VkBufferImageCopy region{
-			.bufferOffset = 0,
-			.bufferRowLength = 0,
-			.bufferImageHeight = 0,
-			.imageSubresource = {
-				VK_IMAGE_ASPECT_DEPTH_BIT,
-				0, 0, 1},
-			.imageOffset = {0, 0, 0},
-			.imageExtent = {scene_system.atlas_size, scene_system.atlas_size, 1}};
-
-		vkCmdCopyImageToBuffer(
-			workspace.command_buffer,
-			workspace.Shadow_Atlas.handle,
-			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-			workspace.debug_buffer.handle,
-			1,
-			&region);
-		
-		VkBufferMemoryBarrier buffer_barrier{
-			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-			.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-			.dstAccessMask = VK_ACCESS_HOST_READ_BIT,
-			.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-			.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-			.buffer = workspace.debug_buffer.handle,
-			.offset = 0,
-			.size = VK_WHOLE_SIZE
-		};
-
-		vkCmdPipelineBarrier(
-			workspace.command_buffer,
-			VK_PIPELINE_STAGE_TRANSFER_BIT,
-			VK_PIPELINE_STAGE_HOST_BIT,
-			0,
-			0, nullptr,
-			1, &buffer_barrier,
-			0, nullptr);
-			
-	
-		VkImageMemoryBarrier barrier2{
-			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-			.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT, // or DEPTH_WRITE if just rendered
-			.dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
-			.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-			.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-			.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-			.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-			.image = workspace.Shadow_Atlas.handle,
-			.subresourceRange = {
-				VK_IMAGE_ASPECT_DEPTH_BIT,
-				0, 1,
-				0, 1}};
-
-		vkCmdPipelineBarrier(
-			workspace.command_buffer,
-			VK_PIPELINE_STAGE_TRANSFER_BIT,
-			VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-			0,
-			0, nullptr,
-			0, nullptr,
-			1, &barrier2);
-	}
-	else if(scene_system.shadows_on){
+	if(scene_system.shadows_on){
 		VkImageMemoryBarrier barrier2{
 			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
 			.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT, // or DEPTH_WRITE if just rendered
@@ -714,9 +598,6 @@ void Tutorial::render(RTG &rtg_, RTG::RenderParams const &render_params)
 			1, &barrier
 		);
 	}
-
-
-
 
 	{ // actual render pass
 		std::array<VkClearValue, 2> clear_values{
@@ -917,54 +798,8 @@ void Tutorial::render(RTG &rtg_, RTG::RenderParams const &render_params)
 			}
 			index_offset += (uint32_t)scene_system.pbr_object_instances.size(); // update index_offset for the next batch of instances
 		}
-
-		{//draw with the ray march smoke volume pipeline
-			vkCmdBindPipeline(workspace.command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ray_march_smoke_volume_pipeline.handle);
-			vkCmdBindDescriptorSets(workspace.command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ray_march_smoke_volume_pipeline.layout,
-										0, 1, &texture_debug_system.density_tex, 0, nullptr);
-
-			mat4 WORLD_FROM_CLIP = scene_system.CLIP_FROM_WORLD.inverse();
-
-			RayMarchSmokeVolumePipeline::Push push{
-				.WORLD_FROM_CLIP = WORLD_FROM_CLIP,
-				.eye = vec4(scene_system.EYE.x, scene_system.EYE.y, scene_system.EYE.z, 0.0f),
-				.volume_center = vec4(0.0, 0.0, 10.0f, fluid_system.cell_size_ws),//hard coded position, no scene representation yet, last bit stores cell size in world space
-				.N = fluid_system.v_volume_side_length,
-			};
-			vkCmdPushConstants(workspace.command_buffer, ray_march_smoke_volume_pipeline.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
-			vkCmdDraw(workspace.command_buffer, 3, 1, 0, 0);
-		}
-
-		{ // draw particles
-			particle_system.draw(
-				workspace.command_buffer,
-				scene_system.CLIP_FROM_WORLD,
-				vec3(0.0f, 0.0f, 10.0f),
-				fluid_system.cell_size_ws,
-				fluid_system.v_volume_side_length
-			);
-		}
-
-		{// draw with TextureDebugPipeline
-			vkCmdBindPipeline(workspace.command_buffer,VK_PIPELINE_BIND_POINT_GRAPHICS, texture_debug_system.texture_debug_pipeline.handle);
-
-			vkCmdBindDescriptorSets(workspace.command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, texture_debug_system.texture_debug_pipeline.layout,
-			0, 1, &workspace.Shadow_Atlas_descriptors, 0, nullptr);
-
-			vkCmdBindDescriptorSets(workspace.command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, texture_debug_system.texture_debug_pipeline.layout,
-			1, 1, &texture_debug_system.velocity_tex, 0, nullptr);
-
-			vkCmdBindDescriptorSets(workspace.command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, texture_debug_system.texture_debug_pipeline.layout,
-			2, 1, &texture_debug_system.density_tex, 0, nullptr);
-
-			vkCmdDraw(workspace.command_buffer, 3, 1, 0, 0);
-		}
-
-
 		vkCmdEndRenderPass(workspace.command_buffer);
 	}
-
-
 
 	// End Recording
 	VK(vkEndCommandBuffer(workspace.command_buffer));
@@ -991,26 +826,9 @@ void Tutorial::render(RTG &rtg_, RTG::RenderParams const &render_params)
 		};
 		VK(vkQueueSubmit(rtg.graphics_queue, 1, &submit_info, render_params.workspace_available));
 	}	
-	
-	if(scene_system.shadow_dump){ // now read the debug buffer and output it
-		vkQueueWaitIdle(rtg.graphics_queue);
-		std::vector<char> shadow_map_output;
-		shadow_map_output.resize(scene_system.atlas_size * scene_system.atlas_size);
-		if (workspace.debug_buffer.allocation.mapped == nullptr)
-			std::cout << "mapped is fucking null" << std::endl;
-		float *floats = reinterpret_cast<float *>(workspace.debug_buffer.allocation.data());
-		for (uint32_t i = 0; i < scene_system.atlas_size * scene_system.atlas_size; i++)
-		{
-			shadow_map_output[i] = static_cast<unsigned char>(floats[i] * 255.0f);
-		}
-		stbi_write_png("debug/shadow_map_debug.png", scene_system.atlas_size, scene_system.atlas_size, 1, shadow_map_output.data(), scene_system.atlas_size);
-		std::cout<<"dumped a shadow map"<<std::endl;
-		scene_system.shadow_dump = false;
-	}
-
 }
 
-void Tutorial::update(float dt)
+void AVBD::update(float dt)
 {
 
 	// Add at the very beginning of the function
@@ -1079,19 +897,13 @@ void Tutorial::update(float dt)
 		});
 	}
 
-	ComputeContext comp_context = compute_system.begin_frame(rtg);
-	if (fluid_system.fluid_unpaused) fluid_system.update_fluid(dt, comp_context, scene_system);
-	particle_system.update(comp_context, dt, fluid_system.velocity_ind, frame_number);
-	compute_system.end_frame(comp_context);
-
-	texture_debug_system.update_texture_debug(rtg, material_system, fluid_system);
 }
 
 // helper functions
 
 
 
-void Tutorial::on_input(InputEvent const &evt)
+void AVBD::on_input(InputEvent const &evt)
 {
 	// if there is a current action, it gets input priority:
 	if (action)
@@ -1100,11 +912,6 @@ void Tutorial::on_input(InputEvent const &evt)
 		return;
 	}
 	// general controls
-	if (evt.type == InputEvent::KeyDown && evt.key.key == GLFW_KEY_F)
-	{
-		fluid_system.fluid_unpaused = !fluid_system.fluid_unpaused;
-		std::cout << "Switching fluid unpaused:" << fluid_system.fluid_unpaused << std::endl;
-	}
 	if (evt.type == InputEvent::KeyDown && evt.key.key == GLFW_KEY_M)
 	{
 		scene_system.shadows_on = !scene_system.shadows_on;
@@ -1155,7 +962,7 @@ void Tutorial::on_input(InputEvent const &evt)
 		return;
 	}
 
-	// wind motor: hold left mouse button to blow smoke in camera direction
+	// wind motor: hold right mouse button to blow smoke in camera direction
 	if (evt.type == InputEvent::MouseButtonDown && evt.button.button == GLFW_MOUSE_BUTTON_RIGHT)
 		scene_system.wind_motor_active = true;
 	if (evt.type == InputEvent::MouseButtonUp && evt.button.button == GLFW_MOUSE_BUTTON_RIGHT)

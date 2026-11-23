@@ -996,7 +996,7 @@ void RTG::run(Application &application) {
 			.workspace_index = workspace_index,
 			.image_index = image_index,
 			.image_available = workspaces[workspace_index].image_available,
-			.image_done = swapchain_image_dones[image_index],
+			.image_done = swapchain_image_dones[image_index],//this is signaled when GPU finishes the commands submitted for the frame
 			.workspace_available = workspaces[workspace_index].workspace_available,
 		});
 

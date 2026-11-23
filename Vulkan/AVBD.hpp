@@ -3,8 +3,6 @@
 #include "RenderWorkspace.hpp"
 #include "SceneSystem.hpp"
 #include "ComputeSystem.hpp"
-#include "FluidSystem.hpp"
-#include "TextureDebugSystem.hpp"
 
 #include "PosNorTexVertex.hpp"
 #include "PosNorTanTexVertex.hpp"
@@ -17,17 +15,16 @@
 #include "TextureDebugPipeline.hpp"
 #include "ObjectPipelines.hpp"
 #include "Shadow2DPipeline.hpp"
-#include "RayMarchSmokeVolume.hpp"
-#include "ParticleSystem.hpp"
+
 
 #include "RTG.hpp"
 #include <corecrt_math_defines.h>
 
-struct Tutorial : RTG::Application {
+struct AVBD : RTG::Application {
 
-	Tutorial(RTG &);
-	Tutorial(Tutorial const &) = delete;
-	~Tutorial();
+	AVBD(RTG &);
+	AVBD(AVBD const &) = delete;
+	~AVBD();
 
 	//kept for use in destructor:
 	RTG &rtg;
@@ -41,14 +38,13 @@ struct Tutorial : RTG::Application {
 
 	//Pipelines:
 	BackgroundPipeline background_pipeline;
-	RayMarchSmokeVolumePipeline ray_march_smoke_volume_pipeline;
 	LinesPipeline lines_pipeline;
 	LambertianObjectsPipeline lambertian_objects_pipeline;
 	EnvMirrorObjectsPipeline env_mirror_objects_pipeline;
 	PbrObjectsPipeline pbr_objects_pipeline;
 	Shadow2DPipeline shadow_2D_pipeline;
 
-	void init_tutorial();
+	void init_application();
 	void init_shadow_mapping();
 	VkCommandPool command_pool = VK_NULL_HANDLE;
 	VkDescriptorPool descriptor_pool = VK_NULL_HANDLE;
@@ -68,15 +64,6 @@ struct Tutorial : RTG::Application {
 
 	//compute system that handles GPU compute shader work 
 	ComputeSystem compute_system;
-
-	//fluid system that uses computes system to do voxel fluid simulation
-	FluidSystem fluid_system;
-
-	//TextureDebugSystem
-	TextureDebugSystem texture_debug_system;
-
-	ParticleSystem particle_system;
-	VkDescriptorPool particle_descriptor_pool = VK_NULL_HANDLE;
 
 	//--------------------------------------------------------------------
 	//Resources that change when the swapchain is resized:
