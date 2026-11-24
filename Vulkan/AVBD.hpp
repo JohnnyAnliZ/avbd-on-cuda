@@ -62,9 +62,6 @@ struct AVBD : RTG::Application {
 	// camera, debug lines, and view state live in scene_system
 	SceneSystem scene_system;
 
-	//compute system that handles GPU compute shader work 
-	ComputeSystem compute_system;
-
 	//--------------------------------------------------------------------
 	//Resources that change when the swapchain is resized:
 

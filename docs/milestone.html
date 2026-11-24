@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="style.css">
+<title>Rigid Body with AVBD</title>
+</head>
+<body>
+<main>
+
+<h1>Augmented Vertex Block Descent using CUDA</h1>
+<p>Johnny Zhang</p>
+<p>Webpage: <a href = "https://johnnyanliz.github.io/avbd-on-cuda" >https://johnnyanliz.github.io/avbd-on-cuda</a></p>
+<h2>Milestone</h2>
+<p>
+    I got started working on the collision detection part first. I read Tero Karras' 
+    <a href = "https://developer.nvidia.com/blog/thinking-parallel-part-iii-tree-construction-gpu/">technical blog </a>
+    on parallelizing collison detection on the GPU. I also started working on integrating my vulkan renderer with doing 
+    compute with CUDA. </p>
+<p>
+    With respect to the goals and deliverables stated in my proposal, I am a bit behind, admittedly. I still believe I'm 
+    on track to complete all the non-stretch goals, namely parallel collision detection and AVBD update. Two things kept me 
+    busy. One is learning the collison detection algorithm that involves constructing a LBVH in parallel and traversing the 
+    LBVH in a efficient and divergence-free way. The LBVH construction algorithm exploits two properties of a binary radix 
+    tree with sorted morton codes as leaves. The first is the fact that there are n-1 internal nodes for n leaves so that the 
+    internal nodes can be arranged to match the leave nodes. The second  is that the leaves are unique and sorted ,so theres 
+    a way every internal node [1,n-1] can know it's range and split deterministically just by looking at leaves(sorted morton
+    code array). The second thing that kept me busy is revising real-time graphics knowledge on synchronizng the rendering and 
+    presentation of multiple-frames-in-flight and syncrhonizing GPU physics update work with graphics work, which is a completely
+    different kind of "parallelism". I worked out a high-level way to have each frame's physics work signal a semaphore when the CUDA
+    kernels have completed so the graphics on the VULKAN side can read from the buffer of transforms that is the result of CUDA AVBD 
+    calculation(collision detection + AVBD).  
+</p>
+
+<p>
+    I plan to demo with a video of a scene with a lot of (millions) rigid bodies. Maybe something similar to the AVBD paper like a destruction
+    of huge stacked structures. 
+</p>
+
+</main>
+</body>
+</html>
+
+</main>
+</body>
+</html>
