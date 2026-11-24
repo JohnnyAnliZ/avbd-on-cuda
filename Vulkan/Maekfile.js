@@ -60,7 +60,7 @@ const cube_objs = [
 
 //maek.CUDA(...) builds a cuda source file:
 const cuda_objs = [
-	
+	maek.CUDA('AVBD_CUDA_init.cu'),
 ];
 
 //maek.GLSLC(...) builds a glsl source file:
@@ -132,7 +132,7 @@ const particle_shaders = [
 main_objs.push( maek.CPP('ParticleSystem.cpp', undefined, { depends:[...particle_shaders] } ) );
 
 
-const main_exe = maek.LINK([...main_objs, ...shared_objs], 'bin/main');
+const main_exe = maek.LINK([...main_objs, ...cuda_objs, ...shared_objs], 'bin/main');
 
 const cube_exe = maek.LINK([...cube_objs, ...shared_objs] , 'bin/cube');
 
@@ -198,6 +198,8 @@ function custom_flags_and_rules() {
 		maek.options.LINKLibs = [
 			'User32.lib',
 			`/LIBPATH:${VULKAN_SDK}/Lib`,
+			`/LIBPATH:${CUDA}/lib/x64`,
+			'cudart.lib',
 			'vulkan-1.lib',
 			`/LIBPATH:../glfw-3.4.bin.WIN64/lib-vc2022`,
 			'glfw3.lib',
@@ -240,8 +242,8 @@ function custom_flags_and_rules() {
 	}
 	//- - - - - - - - - - - - -
 	//custom rule that runs CUDA
-	maek.DEFAULT_OPTIONS.CUDA = [`${CUDA}/bin/nvcc` + (maek.OS === 'windows' ? '.exe' : ''), '-g', '-O3', '-arch=sm_86']
-	maek.DEFAULT_OPTIONS.CUDAFlags = []
+	maek.DEFAULT_OPTIONS.CUDA = [`${CUDA}/bin/nvcc` + (maek.OS === 'windows' ? '.exe' : ''), '-g', '-O3', '-std=c++20', '-arch=sm_86']
+	maek.DEFAULT_OPTIONS.CUDAFlags = ['-Xcompiler', '/MD', '-I.', '-I', `${VULKAN_SDK}/include`, '-I', '../glfw-3.4.bin.WIN64/include']
 	
 	maek.CUDA = (cudaFile, objFileBase, localOptions = {}) => {
 		const path = require('path').posix; //NOTE: expect posix-style paths even on windows

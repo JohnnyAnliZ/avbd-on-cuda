@@ -8,6 +8,8 @@
                 "C:/Users/zal17/Documents/RealTimeG/glfw-3.4.bin.WIN64/include/**"
             ],
             "defines": [
+                "VK_USE_PLATFORM_WIN32_KHR",
+                "DNOMINMAX",
                 "_DEBUG",
                 "UNICODE",
                 "_UNICODE"

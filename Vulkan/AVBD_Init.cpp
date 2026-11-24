@@ -4,10 +4,31 @@
 #include "VK.hpp"
 
 #include <GLFW/glfw3.h>
+#include <stdexcept>
 
 
 //general initializing 
 void AVBD::init_application(){
+	//CUDA init
+	if(rtg.configuration.cuda){
+		VkPhysicalDeviceIDProperties idProperties{};
+		idProperties.sType =
+			VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES;
+
+		VkPhysicalDeviceProperties2 properties{};
+		properties.sType =
+			VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+		properties.pNext = &idProperties;
+
+		vkGetPhysicalDeviceProperties2(rtg.physical_device, &properties);
+
+		if (initCuda(idProperties.deviceUUID, VK_UUID_SIZE) < 0) {
+            throw std::runtime_error(
+                "No CUDA device matches the Vulkan GPU."
+            );
+        }
+	}
+
 	//select a depth format:
 	//  (at least one of these two must be supported, according to the spec; but neither are required)
 	depth_format = rtg.helpers.find_image_format(

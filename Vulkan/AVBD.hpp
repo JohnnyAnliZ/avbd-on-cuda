@@ -15,6 +15,8 @@
 #include "TextureDebugPipeline.hpp"
 #include "ObjectPipelines.hpp"
 #include "Shadow2DPipeline.hpp"
+#include "FluidSystem.hpp"
+#include "RayMarchSmokeVolume.hpp"
 
 
 #include "RTG.hpp"
@@ -45,6 +47,7 @@ struct AVBD : RTG::Application {
 	Shadow2DPipeline shadow_2D_pipeline;
 
 	void init_application();
+	int initCuda(uint8_t *vkDeviceUUID, size_t UUID_SIZE);
 	void init_shadow_mapping();
 	VkCommandPool command_pool = VK_NULL_HANDLE;
 	VkDescriptorPool descriptor_pool = VK_NULL_HANDLE;

@@ -1,8 +1,17 @@
+#ifdef _WIN32
+#ifndef VK_USE_PLATFORM_WIN32_KHR
+#define VK_USE_PLATFORM_WIN32_KHR
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#endif
+
 #include "RTG.hpp"
 
 #include "VK.hpp"
 
-
+#include <vulkan/vulkan.h>
 #include <vulkan/vulkan_core.h>
 #if defined(__APPLE__)
 #include <vulkan/vulkan_beta.h> //for portability subset
@@ -126,6 +135,11 @@ RTG::RTG(Configuration const &configuration_) : helpers(*this) {
 	instance_extensions.emplace_back(VK_EXT_METAL_SURFACE_EXTENSION_NAME);
 	#endif
 
+	//add CUDA extension
+	if(configuration.cuda){
+		instance_extensions.emplace_back(VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME);
+		instance_extensions.emplace_back(VK_KHR_EXTERNAL_SEMAPHORE_EXTENSION_NAME);
+	}
 	if (configuration.debug) {
 		instance_extensions.emplace_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 		instance_layers.emplace_back("VK_LAYER_KHRONOS_validation");
@@ -374,6 +388,20 @@ RTG::RTG(Configuration const &configuration_) : helpers(*this) {
 		#endif
 		//Add the swapchain extension:
 		if (!configuration.headless)device_extensions.emplace_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+
+		//Add CUDA extension
+		if(configuration.cuda){
+			device_extensions.emplace_back(VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME);
+			device_extensions.emplace_back(VK_KHR_EXTERNAL_SEMAPHORE_EXTENSION_NAME);
+			device_extensions.emplace_back(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
+			#if defined(_WIN64)
+			device_extensions.emplace_back(VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME);
+			device_extensions.emplace_back(VK_KHR_EXTERNAL_SEMAPHORE_WIN32_EXTENSION_NAME);
+			#else
+			device_extensions.emplace_back(VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME);
+			device_extensions.emplace_back(VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME);
+			#endif
+		}
 
 		{ //create the logical device:
 			std::vector< VkDeviceQueueCreateInfo > queue_create_infos;

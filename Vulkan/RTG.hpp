@@ -55,7 +55,12 @@ struct RTG {
 		//  `--debug` and `--no-debug` command-line flags
 		bool debug = true;
 
+		//frustum culling
+		//	--
 		bool cull = true;
+
+		//cuda for GPU computation
+		bool cuda = true;
 
 		//if set, use a specific device for rendering:
 		// `--physical-device <name>` command-line flag
@@ -222,6 +227,7 @@ struct RTG {
 
 	//parameters passed to Application::draw() when asking application to render a frame:
 	struct RenderParams {
+		float dt = -1.0f;
 		uint32_t workspace_index; //which per-render workspace to use (e.g., you probably want a command buffer per workspace)
 		uint32_t image_index; //which swapchain image to render into
 		VkSemaphore image_available = VK_NULL_HANDLE; //nothing should use the swapchain image until this is signal'd

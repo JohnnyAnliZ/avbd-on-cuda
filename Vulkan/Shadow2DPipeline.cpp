@@ -1,4 +1,4 @@
-#include "Tutorial.hpp"
+#include "AVBD.hpp"
 #include "Helpers.hpp"
 #include "VK.hpp"
 
@@ -12,7 +12,7 @@ static uint32_t frag_code[] =
 ;
 
 
-void Tutorial::init_shadow_mapping(){
+void AVBD::init_shadow_mapping(){
     { //create shadow pass
 		//specify attachments
 		std::array< VkAttachmentDescription, 1 > attachments{
