@@ -99,6 +99,10 @@ struct S72 {
 		Environment *environment = nullptr;
 		Light *light = nullptr;
 
+		//physics objects
+		bool rigidBody = false;
+		float mass = 1.0f;
+
 		mat4 parent_from_local() {
 			return mat4::translate(translation)
 				* mat4::rotate(rotation)

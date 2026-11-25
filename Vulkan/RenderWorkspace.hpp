@@ -21,9 +21,15 @@ struct Workspace {
     Helpers::AllocatedBuffer Lights;
     VkDescriptorSet Lights_descriptors = VK_NULL_HANDLE;
 
+    //transforms for CPU key-frame animated objects
     Helpers::AllocatedBuffer Transforms_src;
     Helpers::AllocatedBuffer Transforms;
     VkDescriptorSet Transforms_descriptors = VK_NULL_HANDLE;
+
+    //transforms for GPU physically animated objects
+    Helpers::AllocatedBuffer Physics_Transforms_src;
+    Helpers::AllocatedBuffer Physics_Transforms;
+    VkDescriptorSet Physics_Transforms_descriptors = VK_NULL_HANDLE;
 
     Helpers::AllocatedImage Shadow_Atlas;
     VkImageView Shadow_Atlas_view = VK_NULL_HANDLE;

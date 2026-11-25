@@ -18,7 +18,7 @@ struct MaterialSystem : TextureSystem {
 	EnvMirrorObjectsPipeline &env_mirror_objects_pipeline;
 	PbrObjectsPipeline &pbr_objects_pipeline;
 
-	enum class MaterialType {
+	enum class MaterialType : uint32_t{
 		LAMBERTIAN = 1,
 		ENVMIRROR = 2,
 		PBR = 3,

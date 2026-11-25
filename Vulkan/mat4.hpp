@@ -76,6 +76,15 @@ inline quat normalized(quat const& q) {
 
 
 struct vec3{
+	union {
+		struct {
+			float x;
+			float y;
+			float z;
+		};
+		float data[3] = {};
+	};
+
 	vec3(float _x, float _y, float _z){
 		x = _x;
 		y = _y;
@@ -97,14 +106,6 @@ struct vec3{
 		z = f_ptr[2];
 
 	}
-	union {
-		struct {
-			float x;
-			float y;
-			float z;
-		};
-		float data[3] = {};
-	};
 	vec3& operator+=(const vec3 &other){
 		x += other.x;
 		y += other.y;
@@ -139,6 +140,12 @@ struct vec4{
 		y = _y;
 		z = _z;
 		w = _w;
+	}
+	vec4 (vec3 xyz, float w){
+		x = xyz.x;
+		y = xyz.y;
+		z = xyz.z;
+		w = w;
 	}
 	vec4(){
 		x = 0;
@@ -356,7 +363,6 @@ inline vec4 operator-(vec4 const &a, vec4 const&b){
 	return vec4(a.x - b.x, a.y - b.y, a.z - b.z, a.w - b.w);
 }
 
-
 inline vec4 operator*(mat4 const &A, vec4 const &b){
     vec4 ret;
     //ret = A * b
@@ -385,11 +391,53 @@ inline mat4 operator*(mat4 const &A, mat4 const &B){
 	return ret;
 }
 
+//-------quaternion stuff---------
+inline quat quaternion_from_axes(vec3 x, vec3 y, vec3 z) {
+    // x, y, z are columns of an orthonormal rotation matrix.
+    quat q;
+    float trace = x.x + y.y + z.z;
 
+    if (trace > 0.0f) {
+        float s = 2.0f * std::sqrt(trace + 1.0f);
+        q = quat{
+            (y.z - z.y) / s,
+            (z.x - x.z) / s,
+            (x.y - y.x) / s,
+            0.25f * s
+        };
+    } else if (x.x > y.y && x.x > z.z) {
+        float s = 2.0f * std::sqrt(1.0f + x.x - y.y - z.z);
+        q = quat{
+            0.25f * s,
+            (y.x + x.y) / s,
+            (z.x + x.z) / s,
+            (y.z - z.y) / s
+        };
+    } else if (y.y > z.z) {
+        float s = 2.0f * std::sqrt(1.0f + y.y - x.x - z.z);
+        q = quat{
+            (y.x + x.y) / s,
+            0.25f * s,
+            (z.y + y.z) / s,
+            (z.x - x.z) / s
+        };
+    } else {
+        float s = 2.0f * std::sqrt(1.0f + z.z - x.x - y.y);
+        q = quat{
+            (z.x + x.z) / s,
+            (z.y + y.z) / s,
+            0.25f * s,
+            (x.y - y.x) / s
+        };
+    }
+
+    q.normalize();
+    return q;
+}
+//-------end quaternion stuff---------
 
 
 //-------vec3 stuff-----
-
 inline float dot(vec3 const &a,vec3 const &b){
     return a.x*b.x + a.y*b.y + a.z*b.z;
 }
@@ -418,9 +466,8 @@ inline vec3 normalized(vec3 const &a){
 	float len = length(a);
 	return a/len;
 }
-
-
 //----end vec3 stuff----
+
 
 //----vec2 stuff----
 inline vec2 operator*(vec2 const &a, float const &c){
@@ -434,8 +481,8 @@ inline vec2 operator/(vec2 const &a, float const &c){
 }
 //----end vec2 stuff----
 
-//----view projection stuff----
 
+//----view projection stuff----
 
 //perspective projection matrix.
 // - vfov is fov *in radians*

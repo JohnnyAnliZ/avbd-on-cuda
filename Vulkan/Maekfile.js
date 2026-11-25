@@ -60,7 +60,7 @@ const cube_objs = [
 
 //maek.CUDA(...) builds a cuda source file:
 const cuda_objs = [
-	maek.CUDA('AVBD_CUDA_init.cu'),
+	maek.CUDA('CUDA_init.cu'),
 ];
 
 //maek.GLSLC(...) builds a glsl source file:

@@ -2,6 +2,8 @@
 
 #include "Helpers.hpp"
 #include "InputEvent.hpp"
+#include "PhysicsTypes.hpp"
+
 
 #include <vulkan/vulkan_core.h>
 

@@ -10,6 +10,7 @@
 #include "LinesPipeline.hpp"
 #include "GeometryGen.hpp"
 #include "mat4.hpp"
+#include "PhysicsSystem.hpp"
 
 #include <array>
 #include <deque>
@@ -48,6 +49,7 @@ struct SceneSystem {
 	std::unordered_map<std::string, BasicCamera>::iterator current_camera;
 
 
+	//------------CPU objects-------------
 	struct LambertianObjectInstance {
 		ObjectVertices vertices;
 		Transform transform;
@@ -64,16 +66,42 @@ struct SceneSystem {
 		Transform transform;
 		uint32_t texture = 0;
 	};
+
 	std::vector<LambertianObjectInstance> lambertian_object_instances;
 	std::vector<EnvMirrorObjectInstance> env_mirror_object_instances;
 	std::vector<PbrObjectInstance> pbr_object_instances;
 
-	struct point { uint32_t x, y; };
-	struct box { point topleft; point bottomright; };
+
+	//------------GPU objects-------------
+	PhysicsSystem physics_system;
+
+	struct BatchKey {
+		PhysicsPipeline pipeline;
+		std::string material;
+		std::string mesh;
+
+		bool operator<(const BatchKey& other) const {
+			return std::tie(pipeline, material, mesh)
+				< std::tie(other.pipeline, other.material, other.mesh);
+		}
+	};
+	struct DrawBatch {
+		uint32_t pipelineId;
+		uint32_t materialId;
+		uint32_t firstVertex;//vertex buffer shared with cpu objects
+		uint32_t vertexCount;
+		uint32_t firstInstance;
+		uint32_t instanceCount;
+	};
+
+	std::vector<DrawBatch> draw_batches;
+	
+	std::vector<uint32_t> instanceBodyIds;//index into the Transform, [firstInstance, firstInstance+instanceCount) is the transforms of the batch
 
 	float time_elapsed = 0.0f;
 
 	//------lights and shadow stuff-------
+	struct point { uint32_t x, y; };
 	std::vector<Light> lights;
 	std::vector<uint32_t> light_shadow_map_sizes;
 	bool default_world_lights = true;

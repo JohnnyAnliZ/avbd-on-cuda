@@ -36,14 +36,12 @@ void SceneSystem::load_scene() {
 		return;
 	}
 
-
 	{//preallocate some space on the lines buffer
 		lines_vertices.clear();
 		constexpr size_t lines_vert_count = 4096;
 		lines_vertices.reserve(lines_vert_count);
 		starts.reserve(512);
 	}
-
 
 	{//load cameras
 		std::deque<Item> current_nodes;
@@ -152,6 +150,183 @@ void SceneSystem::load_scene() {
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, Helpers::Unmapped);
 		rtg.helpers.transfer_to_buffer(vertices.data(), bytes, object_vertices);
 	}
+
+
+	{//GPU rigid body objects prep work
+		//this block does three things
+		//	upload initial transforms to each workspace's physics transform buffer
+		//	initialize cuda buffers for RigidBody types for simulation and body_from_local to eventually update draw transforms
+		// 	create draw_batches and instanceBodyIds to map batch of the same mesh to bodyIds
+		std::vector<RigidBody> rigid_bodies;
+		std::vector<Transform> initial_transforms;
+		std::vector<mat4> body_from_local;
+
+		std::map<BatchKey, std::vector<uint32_t>> groups;//groups to collect and later flatten
+		draw_batches.clear();
+		instanceBodyIds.clear();
+
+		std::deque<Item> current_nodes;
+		for (auto n : scene72.scene.roots) {
+			current_nodes.emplace_back(Item{n, mat4::identity()});
+		}
+		while (!current_nodes.empty()) {//BFS
+			auto [node, world_from_parent] = current_nodes.front();
+			current_nodes.pop_front();
+			mat4 world_from_local = world_from_parent * node->parent_from_local();
+
+			if (node->mesh != nullptr && node->rigidBody) {//convert to RigidBody representation
+				assert(meshes.find(node->mesh->name) != meshes.end());
+				const auto& mesh = meshes.at(node->mesh->name);
+            	const auto& bbox = mesh.bbox;
+
+				if (!std::isfinite(node->mass) || node->mass < 0.0f) throw std::runtime_error("Invalid rigid body mass: " + node->name);
+
+				// Extract scaled local axes from the world matrix.
+				vec3 x{world_from_local[0], world_from_local[1], world_from_local[2]};
+				vec3 y{world_from_local[4], world_from_local[5], world_from_local[6]};
+				vec3 z{world_from_local[8], world_from_local[9], world_from_local[10]};
+
+				float sx = length(x);
+				float sy = length(y);
+				float sz = length(z);
+
+				if (!(sx > 0.0f && sy > 0.0f && sz > 0.0f)) {
+					throw std::runtime_error("Invalid rigid body scale: " + node->name);
+				}
+
+				x = x * (1.0f / sx);
+				y = y * (1.0f / sy);
+				z = z * (1.0f / sz);
+
+				constexpr tolerance = 1e-4f;
+				if(std::abs(dot(x,y)) > tolerance || std::abs(dot(z,y)) > tolerance || std::abs(dot(x,z)) > tolerance){
+					throw std::runtime_error("Sheared rigid body: " + node->name);
+				}
+
+				// Make the orientation a proper rotation
+				if (dot(cross(x, y), z) < 0.0f) {
+					x = x * -1.0f;
+				}
+
+				vec3 local_center = (bbox.min + bbox.max) * 0.5f;
+				vec3 local_half = (bbox.max - bbox.min) * 0.5f;
+
+				RigidBody body{};
+				body.position =(world_from_local * vec4(local_center, 1.0f)).xyz();
+
+				body.orientation = quaternion_from_axes(x, y, z);
+
+				body.halfExtents = vec3{
+					local_half.x * sx,
+					local_half.y * sy,
+					local_half.z * sz
+				};
+
+				const auto& h = body.halfExtents;
+				if (!(h.x > 0.0f && h.y > 0.0f && h.z > 0.0f)) {
+					throw std::runtime_error("Degenerate rigid body box: " + node->name);
+				}
+
+				body.linearVelocity = vec3{0, 0, 0};
+				body.angularVelocity = vec3{0, 0, 0};
+
+				if (node->mass == 0.0f) {
+					body.inverseMass = 0.0f;
+					body.inverseInertia = vec3{0, 0, 0};
+				} else {
+					body.inverseMass = 1.0f / node->mass;
+
+					// Uniform solid box:
+					// Ixx = mass / 3 * (hy² + hz²), etc.
+					body.inverseInertia = vec3{
+						3.0f / (node->mass * (h.y*h.y + h.z*h.z)),
+						3.0f / (node->mass * (h.x*h.x + h.z*h.z)),
+						3.0f / (node->mass * (h.x*h.x + h.y*h.y))
+					};
+				}
+
+				uint32_t body_id = uint32_t(rigid_bodies.size());
+				rigid_bodies.push_back(body);
+
+				mat3 linear(world_from_local);
+				initial_transforms.push_back(Transform{
+					.WORLD_FROM_LOCAL = world_from_local,
+					.WORLD_FROM_LOCAL_NORMAL = mat4(linear.inverse().transpose())
+				});
+
+				quat q = body.orientation;
+				body_from_local.push_back(
+					mat4::rotate(quat{-q.x, -q.y, -q.z, q.w})
+					* mat4::translate(body.position * -1.0f)
+					* world_from_local
+				);
+
+				//put into groups for batched drawing
+				const auto* material = node->mesh->material;
+
+				if (material == nullptr) {
+					throw std::runtime_error(
+						"Rigid body mesh needs a material: " + node->name
+					);
+				}
+
+				const auto& brdf = material->brdf;
+				MaterialSystem::MaterialType pipeline;
+
+				if (std::holds_alternative<S72::Material::Lambertian>(brdf)) {
+					pipeline = MaterialSystem::MaterialType::LAMBERTIAN;
+				} else if (
+					std::holds_alternative<S72::Material::Mirror>(brdf) ||
+					std::holds_alternative<S72::Material::Environment>(brdf)
+				) {
+					pipeline = MaterialSystem::MaterialType::ENVMIRROR;
+				} else if (std::holds_alternative<S72::Material::PBR>(brdf)) {
+					pipeline = MaterialSystem::MaterialType::PBR;
+				} else {
+					throw std::runtime_error(
+						"Unsupported rigid body material: " + material->name
+					);
+				}
+
+				groups[BatchKey{pipeline, material->name, node->mesh->name}].push_back(body_id);
+			}
+	
+			for (S72::Node* child : node->children) {
+				current_nodes.emplace_back(Item{child, world_from_local});
+			}
+		}
+
+		//flatten groups
+		for (const auto& [key, body_ids] : groups) {
+			const auto& mesh = meshes.at(key.mesh);
+			const auto& material =
+				scene72.meshes.at(key.mesh).material;
+
+			draw_batches.push_back(DrawBatch{
+				.pipeline = key.pipeline,
+				.materialId =
+					material_system.material_texture_descriptor_set_table.at(
+						key.material
+					),
+				.firstVertex = mesh.verts.first,
+				.vertexCount = mesh.verts.count,
+				.firstInstance = uint32_t(instanceBodyIds.size()),
+				.instanceCount = uint32_t(body_ids.size()),
+				.isEnv = std::holds_alternative<
+					S72::Material::Environment
+				>(material->brdf)
+			});
+
+			instanceBodyIds.insert(
+				instanceBodyIds.end(),
+				body_ids.begin(),
+				body_ids.end()
+			);
+		}
+
+		assert(rigid_bodies.size() == body_from_local.size());
+		physics_system.initialize(rigid_bodies.data(), body_from_local.data(), rigid_bodies.size());
+	}
 }
 
 void SceneSystem::update_scene(float dt) {
@@ -218,7 +393,7 @@ void SceneSystem::update_scene(float dt) {
 		}
 	}
 
-	{//BFS over scene graph: instance meshes, update cameras and lights
+	{//BFS over scene graph: instance meshes(non-physics), update cameras and lights
 		std::deque<Item> current_nodes;
 		for (auto n : scene72.scene.roots) {
 			current_nodes.emplace_back(Item{n, mat4::identity()});
@@ -228,7 +403,7 @@ void SceneSystem::update_scene(float dt) {
 			current_nodes.pop_front();
 			mat4 world_from_local = world_from_parent * node->parent_from_local();
 
-			if (node->mesh != nullptr) {
+			if (node->mesh != nullptr && !node->rigidBody) {
 				assert(meshes.find(node->mesh->name) != meshes.end());
 				AABB &b = meshes[node->mesh->name].bbox;
 				std::array<vec3, 8> bbox_corners;
@@ -260,8 +435,6 @@ void SceneSystem::update_scene(float dt) {
 						});
 					}
 				}
-
-
 			}
 
 			if (node->camera != nullptr) {
